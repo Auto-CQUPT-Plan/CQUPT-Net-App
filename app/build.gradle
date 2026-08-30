@@ -2,6 +2,29 @@ apply plugin: 'com.android.application'
 apply plugin: 'kotlin-android'
 apply plugin: 'org.jetbrains.kotlin.plugin.compose'
 
+def localSigningProperties = new Properties()
+def localSigningPropertiesFile = rootProject.file('keystore.properties')
+if (localSigningPropertiesFile.exists()) {
+    localSigningPropertiesFile.withInputStream { localSigningProperties.load(it) }
+}
+
+def signingValue = { String name ->
+    providers.gradleProperty(name).orNull ?:
+        localSigningProperties.getProperty(name) ?:
+        System.getenv(name)
+}
+
+def releaseStoreFile = signingValue('RELEASE_STORE_FILE')
+def releaseStorePassword = signingValue('RELEASE_STORE_PASSWORD')
+def releaseKeyAlias = signingValue('RELEASE_KEY_ALIAS')
+def releaseKeyPassword = signingValue('RELEASE_KEY_PASSWORD')
+def hasReleaseSigning = [
+    releaseStoreFile,
+    releaseStorePassword,
+    releaseKeyAlias,
+    releaseKeyPassword
+].every { it != null && !it.isBlank() }
+
 android {
     namespace 'top.met6.cquptnet'
     compileSdk 35
@@ -10,8 +33,8 @@ android {
         applicationId "top.met6.cquptnet"
         minSdk 24
         targetSdk 35
-        versionCode 1
-        versionName "1.0"
+        versionCode 2
+        versionName "1.1.0"
 
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
@@ -20,17 +43,21 @@ android {
     }
 
     signingConfigs {
-        release {
-            storeFile file(RELEASE_STORE_FILE)
-            storePassword RELEASE_STORE_PASSWORD
-            keyAlias RELEASE_KEY_ALIAS
-            keyPassword RELEASE_KEY_PASSWORD
+        if (hasReleaseSigning) {
+            release {
+                storeFile rootProject.file(releaseStoreFile)
+                storePassword releaseStorePassword
+                keyAlias releaseKeyAlias
+                keyPassword releaseKeyPassword
+            }
         }
     }
 
     buildTypes {
         release {
-            signingConfig signingConfigs.release
+            if (hasReleaseSigning) {
+                signingConfig signingConfigs.release
+            }
             minifyEnabled true
             shrinkResources true
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
@@ -66,8 +93,6 @@ dependencies {
     
     // Network
     implementation 'com.squareup.okhttp3:okhttp:4.12.0'
-    implementation 'com.google.code.gson:gson:2.12.1'
-    
     // Coroutines
     implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.1'
 

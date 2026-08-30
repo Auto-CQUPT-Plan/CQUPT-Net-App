@@ -35,3 +35,4 @@ captures/
 # Signing keys
 *.jks
 *.keystore
+keystore.properties

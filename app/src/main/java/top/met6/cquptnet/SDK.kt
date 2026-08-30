@@ -1,8 +1,8 @@
 package top.met6.cquptnet
 
+import android.content.Context
 import okhttp3.*
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
-import java.io.IOException
 import java.util.regex.Pattern
 import kotlin.random.Random
 
@@ -10,11 +10,15 @@ data class AuthResult(val result: String, val msg: String, val retCode: Int)
 data class UnbindResult(val result: String, val msg: String)
 
 class CQUPTNetSDK(
+    context: Context,
     private val stuId: String,
     private val password: String,
     private val isp: String = "xyw"
 ) {
-    private val client = OkHttpClient.Builder()
+    private val wifiNetworkManager = WifiNetworkManager(context)
+
+    private fun wifiClient(): OkHttpClient = OkHttpClient.Builder()
+        .socketFactory(wifiNetworkManager.requireWifiNetwork().socketFactory)
         .followRedirects(false)
         .build()
 
@@ -32,7 +36,7 @@ class CQUPTNetSDK(
             .build()
 
         return try {
-            client.newCall(request).execute().use { response ->
+            wifiClient().newCall(request).execute().use { response ->
                 val text = response.body?.string() ?: ""
                 isLoggedIn = text.contains("<title>注销页</title>")
                 
@@ -83,7 +87,7 @@ class CQUPTNetSDK(
             .build()
 
         return try {
-            client.newCall(request).execute().use { response ->
+            wifiClient().newCall(request).execute().use { response ->
                 val text = response.body?.string() ?: ""
                 val resultDict = parseJsonp(text)
                 AuthResult(
@@ -122,7 +126,7 @@ class CQUPTNetSDK(
             .build()
 
         return try {
-            client.newCall(request).execute().use { response ->
+            wifiClient().newCall(request).execute().use { response ->
                 val text = response.body?.string() ?: ""
                 val resultDict = parseJsonp(text)
                 UnbindResult(
