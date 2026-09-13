@@ -15,7 +15,6 @@ import androidx.compose.material.icons.automirrored.filled.Login
 import androidx.compose.material.icons.automirrored.filled.Logout
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -25,7 +24,6 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -41,7 +39,21 @@ import top.met6.cquptnet.SettingsManager
 import top.met6.cquptnet.ui.components.ActionButton
 import top.met6.cquptnet.ui.components.SettingsDialog
 import top.met6.cquptnet.ui.components.StatusCard
-import top.met6.cquptnet.ui.components.UntrustedWifiDialog
+import top.met6.cquptnet.KeepLoginService
+import android.Manifest
+import android.os.Build
+import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.material3.Switch
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.compose.runtime.DisposableEffect
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -49,11 +61,41 @@ fun MainScreen(settings: SettingsManager) {
     val screenState = rememberMainScreenState(settings)
     val wifiGate = rememberWifiRequestGate()
     val uiState = screenState.uiState
-    var showSettings by remember { mutableStateOf(false) }
-
-    LaunchedEffect(Unit) {
-        wifiGate.run(screenState::refresh)
+    val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
+    var keepLogin by remember { mutableStateOf(settings.keepLogin) }
+    val notifications = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { }
+    fun setKeepLogin(enabled: Boolean, requestNotification: Boolean = true) {
+        if (enabled && (settings.studentId.isBlank() || settings.password.isBlank())) {
+            Toast.makeText(context, "请先在设置中填写账号和密码", Toast.LENGTH_LONG).show()
+            return
+        }
+        settings.keepLogin = enabled
+        try {
+            if (enabled) KeepLoginService.start(context) else KeepLoginService.stop(context)
+            keepLogin = enabled
+            if (enabled && requestNotification && Build.VERSION.SDK_INT >= 33 &&
+                context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                notifications.launch(Manifest.permission.POST_NOTIFICATIONS)
+            }
+        } catch (_: Exception) {
+            settings.keepLogin = false
+            keepLogin = false
+            Toast.makeText(context, "登录保持启动失败，请重试", Toast.LENGTH_LONG).show()
+        }
     }
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                keepLogin = settings.keepLogin
+                if (keepLogin) setKeepLogin(true, requestNotification = false)
+                wifiGate.run(screenState::refresh)
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+    var showSettings by remember { mutableStateOf(false) }
 
     Scaffold(
         topBar = {
@@ -71,12 +113,28 @@ fun MainScreen(settings: SettingsManager) {
                 )
             )
         },
+        bottomBar = {
+            Column(Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 24.dp, vertical = 12.dp)) {
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("登录保持", color = Color.White)
+                        Text("每分钟检查，断线后自动登录", color = Color.White.copy(alpha = 0.6f), fontSize = 12.sp)
+                    }
+                    Switch(checked = keepLogin, onCheckedChange = { setKeepLogin(it) })
+                }
+                TextButton(onClick = { wifiGate.run(screenState::refresh) }, modifier = Modifier.align(Alignment.CenterHorizontally)) {
+                    Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text("刷新状态")
+                }
+            }
+        },
+        modifier = Modifier.background(Brush.verticalGradient(listOf(Color(0xFF1A237E), Color(0xFF121212)))),
         containerColor = Color.Transparent
     ) { padding ->
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .background(Brush.verticalGradient(listOf(Color(0xFF1A237E), Color(0xFF121212))))
                 .padding(padding)
         ) {
             Column(
@@ -97,19 +155,10 @@ fun MainScreen(settings: SettingsManager) {
                     text = "登出",
                     icon = Icons.AutoMirrored.Filled.Logout,
                     color = Color(0xFFF44336),
-                    onClick = { wifiGate.run(screenState::logout) }
+                    onClick = { setKeepLogin(false); wifiGate.run(screenState::logout) }
                 )
             }
 
-            TextButton(
-                onClick = { wifiGate.run(screenState::refresh) },
-                modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 32.dp),
-                colors = ButtonDefaults.textButtonColors(contentColor = Color.White.copy(alpha = 0.6f))
-            ) {
-                Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
-                Spacer(modifier = Modifier.width(8.dp))
-                Text("刷新状态", fontSize = 14.sp)
-            }
         }
     }
 
@@ -121,11 +170,4 @@ fun MainScreen(settings: SettingsManager) {
         )
     }
 
-    wifiGate.warningSsid?.let { ssid ->
-        UntrustedWifiDialog(
-            ssid = ssid,
-            onContinue = wifiGate::continuePending,
-            onCancel = wifiGate::cancelPending
-        )
-    }
 }

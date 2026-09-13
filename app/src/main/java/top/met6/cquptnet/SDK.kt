@@ -5,6 +5,11 @@ import okhttp3.*
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import java.util.regex.Pattern
 import kotlin.random.Random
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.suspendCancellableCoroutine
+import java.io.IOException
+import java.util.concurrent.TimeUnit
+import kotlin.coroutines.resumeWithException
 
 data class AuthResult(val result: String, val msg: String, val retCode: Int)
 data class UnbindResult(val result: String, val msg: String)
@@ -19,6 +24,7 @@ class CQUPTNetSDK(
 
     private fun wifiClient(): OkHttpClient = OkHttpClient.Builder()
         .socketFactory(wifiNetworkManager.requireWifiNetwork().socketFactory)
+        .callTimeout(15, TimeUnit.SECONDS)
         .followRedirects(false)
         .build()
 
@@ -30,14 +36,17 @@ class CQUPTNetSDK(
     var isLoggedIn: Boolean = false
 
     suspend fun checkStatus(): Boolean {
+        isLoggedIn = false
+        ipAddr = ""
         val request = Request.Builder()
             .url(REFERER)
             .header("User-Agent", "Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.4 Mobile/15E148 Safari/604.1")
             .build()
 
         return try {
-            wifiClient().newCall(request).execute().use { response ->
+            wifiClient().newCall(request).awaitResponse().use { response ->
                 val text = response.body?.string() ?: ""
+                if (!response.isSuccessful) throw IOException("状态检查失败")
                 isLoggedIn = text.contains("<title>注销页</title>")
                 
                 val patterns = listOf("v4ip\\s*=\\s*['\"]([^'\"]+)['\"]", "v46ip\\s*=\\s*['\"]([^'\"]+)['\"]")
@@ -55,7 +64,7 @@ class CQUPTNetSDK(
                 isLoggedIn
             }
         } catch (e: Exception) {
-            false
+            throw e
         }
     }
 
@@ -87,7 +96,7 @@ class CQUPTNetSDK(
             .build()
 
         return try {
-            wifiClient().newCall(request).execute().use { response ->
+            wifiClient().newCall(request).awaitResponse().use { response ->
                 val text = response.body?.string() ?: ""
                 val resultDict = parseJsonp(text)
                 AuthResult(
@@ -96,6 +105,8 @@ class CQUPTNetSDK(
                     resultDict["ret_code"]?.toIntOrNull() ?: 0
                 )
             }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             AuthResult("0", e.message ?: "Unknown error", -1)
         }
@@ -126,7 +137,7 @@ class CQUPTNetSDK(
             .build()
 
         return try {
-            wifiClient().newCall(request).execute().use { response ->
+            wifiClient().newCall(request).awaitResponse().use { response ->
                 val text = response.body?.string() ?: ""
                 val resultDict = parseJsonp(text)
                 UnbindResult(
@@ -134,6 +145,8 @@ class CQUPTNetSDK(
                     resultDict["msg"] ?: ""
                 )
             }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             UnbindResult("0", e.message ?: "Unknown error")
         }
@@ -155,4 +168,16 @@ class CQUPTNetSDK(
         }
         return emptyMap()
     }
+}
+
+private suspend fun Call.awaitResponse(): Response = suspendCancellableCoroutine { continuation ->
+    continuation.invokeOnCancellation { cancel() }
+    enqueue(object : Callback {
+        override fun onFailure(call: Call, e: IOException) {
+            if (continuation.isActive) continuation.resumeWithException(e)
+        }
+        override fun onResponse(call: Call, response: Response) {
+            continuation.resume(response) { _, value, _ -> value.close() }
+        }
+    })
 }

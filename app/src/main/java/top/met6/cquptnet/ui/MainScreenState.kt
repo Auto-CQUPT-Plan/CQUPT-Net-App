@@ -8,6 +8,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -58,8 +59,15 @@ class MainScreenState internal constructor(
         scope.launch {
             uiState = uiState.copy(isLoading = true)
             val sdk = CQUPTNetSDK(context, settings.studentId, settings.password, settings.isp)
-            val result = withContext(Dispatchers.IO) { operation(sdk) }
-            uiState = result.copy(isLoading = false)
+            try {
+                uiState = withContext(Dispatchers.IO) { operation(sdk) }.copy(isLoading = false)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                uiState = MainUiState(status = "无法连接校园网，请重试")
+            } finally {
+                uiState = uiState.copy(isLoading = false)
+            }
         }
     }
 }

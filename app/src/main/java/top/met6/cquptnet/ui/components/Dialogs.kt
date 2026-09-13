@@ -6,13 +6,10 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.Icon
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
@@ -94,17 +91,5 @@ fun SettingsDialog(settings: SettingsManager, onDismiss: () -> Unit, onSave: () 
             }) { Text("保存") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } }
-    )
-}
-
-@Composable
-fun UntrustedWifiDialog(ssid: String, onContinue: () -> Unit, onCancel: () -> Unit) {
-    AlertDialog(
-        onDismissRequest = onCancel,
-        icon = { Icon(Icons.Default.Warning, contentDescription = null) },
-        title = { Text("非重邮校园网 WiFi") },
-        text = { Text("当前 WiFi：$ssid\n\n此 WiFi 名称不包含 CQUPT，可能不是重邮校园网 WiFi。") },
-        confirmButton = { TextButton(onClick = onContinue) { Text("忽略并继续") } },
-        dismissButton = { TextButton(onClick = onCancel) { Text("取消") } }
     )
 }

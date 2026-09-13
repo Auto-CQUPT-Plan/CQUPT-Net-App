@@ -6,6 +6,10 @@ import android.content.SharedPreferences
 class SettingsManager(context: Context) {
     private val prefs: SharedPreferences = context.getSharedPreferences("cqupt_net_prefs", Context.MODE_PRIVATE)
 
+    var keepLogin: Boolean
+        get() = prefs.getBoolean("keep_login", false)
+        set(value) = prefs.edit().putBoolean("keep_login", value).apply()
+
     var studentId: String
         get() = prefs.getString("student_id", "") ?: ""
         set(value) = prefs.edit().putString("student_id", value).apply()
